@@ -92,21 +92,33 @@ print(f"✓ Agrégation terminée: {df_meteo_agg.shape}")
 #%% 6. MAPPING STATION → RÉGION
 print("\n🗺️ Mapping station → région...")
 
-# Charger la liste des stations avec région
-df_stations = pd.read_csv('data_origin/ListedesStationsMeteo.csv', sep=';')
-print(f"✓ {len(df_stations)} stations chargées")
+# Charger le mapping préalablement créé
+try:
+    df_mapping = pd.read_csv('station_region_mapping.csv')
+    print(f"✓ Mapping chargé: {len(df_mapping)} stations")
 
-# Mapping station → region_code
-station_region_map = df_stations.set_index('ID')['Region'].to_dict()
+    # Créer un dictionnaire pour le mapping
+    station_to_region = df_mapping.set_index('numer_sta')['region_code'].to_dict()
 
-# Appliquer au météo
-df_meteo_agg['region_code'] = df_meteo_agg['numer_sta'].map(station_region_map)
+    # Appliquer le mapping
+    df_meteo_agg['region_code'] = df_meteo_agg['numer_sta'].map(station_to_region)
 
-# Supprimer les lignes sans région
-df_meteo_agg = df_meteo_agg[df_meteo_agg['region_code'].notna()].copy()
-df_meteo_agg['region_code'] = df_meteo_agg['region_code'].astype(int)
+    # Supprimer les lignes sans région
+    before = len(df_meteo_agg)
+    df_meteo_agg = df_meteo_agg[df_meteo_agg['region_code'].notna()].copy()
+    after = len(df_meteo_agg)
 
-print(f"✓ Mapping appliqué: {df_meteo_agg.shape}")
+    print(f"✓ Mapping appliqué: {after}/{before} lignes conservées")
+
+    # Afficher la distribution
+    print(f"\nDistribution par région:")
+    print(df_meteo_agg['region_code'].value_counts().sort_index())
+
+except FileNotFoundError:
+    print("⚠️ ERREUR: Fichier station_region_mapping.csv non trouvé!")
+    print("   Exécutez d'abord: python3 create_station_mapping.py")
+    import sys
+    sys.exit(1)
 
 #%% 7. AGRÉGATION PAR RÉGION ET SEMAINE
 print("\n📊 Agrégation par région et semaine...")
