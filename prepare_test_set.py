@@ -66,16 +66,30 @@ df_meteo['week_year'] = df_meteo['year'] * 100 + df_meteo['week']
 
 print(f"✓ Nettoyage terminé: {df_meteo.shape}")
 
-#%% 4. AGRÉGATION PAR SEMAINE ET STATION
+#%% 4. CONVERSION DES COLONNES EN NUMÉRIQUE
+print("\n🔧 Conversion des colonnes en numérique...")
+
+# Convertir toutes les colonnes (sauf les identifiants) en numérique
+numeric_cols = [col for col in df_meteo.columns if col not in ['numer_sta', 'date', 'year', 'week', 'week_year']]
+for col in numeric_cols:
+    df_meteo[col] = pd.to_numeric(df_meteo[col], errors='coerce')
+
+# Sélectionner uniquement les colonnes numériques pour l'agrégation
+numeric_cols_for_agg = df_meteo.select_dtypes(include=[np.number]).columns.tolist()
+numeric_cols_for_agg = [col for col in numeric_cols_for_agg if col not in ['year', 'week']]
+
+print(f"✓ {len(numeric_cols_for_agg)} colonnes numériques à agréger")
+
+#%% 5. AGRÉGATION PAR SEMAINE ET STATION
 print("\n📊 Agrégation par semaine et station...")
 
 # Grouper par station et semaine (moyenne)
-agg_dict = {col: 'mean' for col in df_meteo.columns if col not in ['numer_sta', 'week_year', 'date', 'year', 'week']}
+agg_dict = {col: 'mean' for col in numeric_cols_for_agg if col not in ['numer_sta', 'week_year']}
 
 df_meteo_agg = df_meteo.groupby(['numer_sta', 'week_year']).agg(agg_dict).reset_index()
 print(f"✓ Agrégation terminée: {df_meteo_agg.shape}")
 
-#%% 5. MAPPING STATION → RÉGION
+#%% 6. MAPPING STATION → RÉGION
 print("\n🗺️ Mapping station → région...")
 
 # Charger la liste des stations avec région
@@ -94,7 +108,7 @@ df_meteo_agg['region_code'] = df_meteo_agg['region_code'].astype(int)
 
 print(f"✓ Mapping appliqué: {df_meteo_agg.shape}")
 
-#%% 6. AGRÉGATION PAR RÉGION ET SEMAINE
+#%% 7. AGRÉGATION PAR RÉGION ET SEMAINE
 print("\n📊 Agrégation par région et semaine...")
 
 # Grouper par région et semaine (moyenne des stations)
@@ -104,7 +118,7 @@ agg_dict_region = {col: 'mean' for col in df_meteo_agg.columns
 df_meteo_region = df_meteo_agg.groupby(['region_code', 'week_year']).agg(agg_dict_region).reset_index()
 print(f"✓ Agrégation par région: {df_meteo_region.shape}")
 
-#%% 7. MERGE TEST + MÉTÉO
+#%% 8. MERGE TEST + MÉTÉO
 print("\n🔗 Merge test + météo...")
 
 # Renommer 'week' en 'week_year' dans le test si nécessaire
@@ -127,7 +141,7 @@ if len(missing) > 0:
     print(f"\n⚠️ Colonnes avec valeurs manquantes:")
     print(missing.head(10))
 
-#%% 8. TRAITEMENT DES VALEURS MANQUANTES
+#%% 9. TRAITEMENT DES VALEURS MANQUANTES
 print("\n🔧 Traitement des valeurs manquantes...")
 
 # Supprimer colonnes avec >50% NaN
@@ -146,7 +160,7 @@ if df_test_merged[numeric_cols].isnull().sum().sum() > 0:
     df_test_merged[numeric_cols] = imputer.fit_transform(df_test_merged[numeric_cols])
     print(f"✓ Valeurs manquantes imputées")
 
-#%% 9. SAUVEGARDE
+#%% 10. SAUVEGARDE
 print("\n💾 Sauvegarde du test set préparé...")
 
 # Sauvegarder dans data_plus/
