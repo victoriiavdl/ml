@@ -319,8 +319,21 @@ cat.fit(X_train, y_train, eval_set=(X_val, y_val))
 pred_val_cat = np.clip(cat.predict(X_val), 0, None)
 print(f"🏁 CatBoost Val RMSE: {rmse(y_val, pred_val_cat):.2f}")
 
-# Fit final
-cat.fit(X_full, y_full)
+# Fit final (use best iteration from validation)
+best_iter = cat.get_best_iteration()
+cat_final = CatBoostRegressor(
+    iterations=best_iter,
+    learning_rate=0.03,
+    depth=4,
+    l2_leaf_reg=10,
+    min_data_in_leaf=50,
+    random_strength=1.0,
+    bagging_temperature=1.0,
+    border_count=64,
+    random_seed=42,
+    verbose=0
+)
+cat_final.fit(X_full, y_full)
 
 # -----------------------------------------------------------------------------
 # 2) XGBoost
@@ -348,8 +361,23 @@ xgb.fit(X_train, y_train, eval_set=[(X_val, y_val)], verbose=False)
 pred_val_xgb = np.clip(xgb.predict(X_val), 0, None)
 print(f"🏁 XGBoost Val RMSE: {rmse(y_val, pred_val_xgb):.2f}")
 
-# Fit final
-xgb.fit(X_full, y_full)
+# Fit final (use best iteration from validation)
+best_iter_xgb = xgb.best_iteration if hasattr(xgb, 'best_iteration') else 5000
+xgb_final = XGBRegressor(
+    n_estimators=best_iter_xgb,
+    learning_rate=0.01,
+    max_depth=5,
+    min_child_weight=30,
+    subsample=0.8,
+    colsample_bytree=0.8,
+    reg_alpha=0.0,
+    reg_lambda=10.0,
+    gamma=0.0,
+    objective="reg:squarederror",
+    random_state=42,
+    tree_method="hist"
+)
+xgb_final.fit(X_full, y_full, verbose=False)
 
 # -----------------------------------------------------------------------------
 # 3) LightGBM
@@ -376,8 +404,22 @@ lgbm.fit(X_train, y_train, eval_set=[(X_val, y_val)], callbacks=[lgb.early_stopp
 pred_val_lgb = np.clip(lgbm.predict(X_val), 0, None)
 print(f"🏁 LightGBM Val RMSE: {rmse(y_val, pred_val_lgb):.2f}")
 
-# Fit final
-lgbm.fit(X_full, y_full)
+# Fit final (use best iteration from validation)
+best_iter_lgb = lgbm.best_iteration_ if hasattr(lgbm, 'best_iteration_') else 5000
+lgbm_final = lgb.LGBMRegressor(
+    n_estimators=best_iter_lgb,
+    learning_rate=0.01,
+    max_depth=5,
+    min_child_samples=30,
+    subsample=0.8,
+    colsample_bytree=0.8,
+    reg_alpha=0.0,
+    reg_lambda=10.0,
+    random_state=42,
+    n_jobs=-1,
+    verbose=-1
+)
+lgbm_final.fit(X_full, y_full)
 
 # -----------------------------------------------------------------------------
 # 4) STACKING (meta-model)
