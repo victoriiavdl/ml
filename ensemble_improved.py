@@ -479,9 +479,141 @@ print(f"   LightGBM:  {rmse(y_val, pred_val_lgb):.2f}")
 print(f"   Weighted:  {best_rmse_ens:.2f}")
 print(f"   Stacking:  {rmse(y_val, pred_val_meta):.2f}")
 
-print("\n💡 Prochaine étape:")
-print("   1. Adapter ce code pour charger et prédire le test set")
-print("   2. Gérer les vrais lags pour le test (utiliser les dernières valeurs du train)")
-print("   3. Créer les submissions")
+print("\n💡 Meilleur modèle pour validation: ", end="")
+best_model = min([
+    ("CatBoost", rmse(y_val, pred_val_cat)),
+    ("XGBoost", rmse(y_val, pred_val_xgb)),
+    ("LightGBM", rmse(y_val, pred_val_lgb)),
+    ("Weighted", best_rmse_ens),
+    ("Stacking", rmse(y_val, pred_val_meta))
+], key=lambda x: x[1])
+print(f"{best_model[0]} (RMSE={best_model[1]:.2f})")
 
-print("\n✅ Entraînement terminé!")
+# -----------------------------------------------------------------------------
+# TEST SET PREDICTIONS
+# -----------------------------------------------------------------------------
+print("\n" + "=" * 80)
+print("PRÉDICTIONS TEST SET")
+print("=" * 80)
+
+# Check if test file exists
+import os
+test_file = "data_plus/test_synop_cleaned_complet.csv"
+if not os.path.exists(test_file):
+    print(f"⚠️  Fichier test non trouvé: {test_file}")
+    print("   Création des submissions ignorée.")
+    print("\n✅ Entraînement terminé!")
+else:
+    print(f"\n📂 Chargement du test set: {test_file}")
+    test = pd.read_csv(test_file)
+    test['date'] = pd.to_datetime(test['date'])
+    test = test.sort_values(['region_code', 'date']).reset_index(drop=True)
+
+    # Extraire year/week
+    test["year"] = test["date"].dt.year
+    test["week_num"] = test["date"].dt.isocalendar().week
+
+    print(f"   Test: {len(test)} obs ({test['date'].min()} → {test['date'].max()})")
+
+    # Feature engineering pour test
+    # NOTE: is_train=False car on ne peut pas calculer les vrais lags sur le test
+    # Les lags seront imputés (NaN -> 0 dans create_features_improved)
+    print("\n🔧 Feature engineering test (⚠️  sans vrais lags - à améliorer)...")
+    test_feat = create_features_improved(test, train, is_train=False)
+
+    X_test = test_feat[features].copy()
+
+    print(f"   NaN in X_test: {X_test.isna().sum().sum()}")
+
+    # Prédictions avec les modèles finaux
+    print("\n🔮 Génération des prédictions...")
+    pred_test_cat = np.clip(cat_final.predict(X_test), 0, None)
+    pred_test_xgb = np.clip(xgb_final.predict(X_test), 0, None)
+    pred_test_lgb = np.clip(lgbm_final.predict(X_test), 0, None)
+
+    # Weighted ensemble
+    pred_test_weighted = (
+        best_w[0] * pred_test_cat +
+        best_w[1] * pred_test_xgb +
+        best_w[2] * pred_test_lgb
+    )
+
+    # Stacking
+    meta_test = np.column_stack([pred_test_cat, pred_test_xgb, pred_test_lgb])
+    pred_test_stacking = np.clip(meta_model.predict(meta_test), 0, None)
+
+    # Stats
+    print("\n📊 Statistiques des prédictions test:")
+    print(f"   CatBoost:  mean={pred_test_cat.mean():.2f}, std={pred_test_cat.std():.2f}")
+    print(f"   XGBoost:   mean={pred_test_xgb.mean():.2f}, std={pred_test_xgb.std():.2f}")
+    print(f"   LightGBM:  mean={pred_test_lgb.mean():.2f}, std={pred_test_lgb.std():.2f}")
+    print(f"   Weighted:  mean={pred_test_weighted.mean():.2f}, std={pred_test_weighted.std():.2f}")
+    print(f"   Stacking:  mean={pred_test_stacking.mean():.2f}, std={pred_test_stacking.std():.2f}")
+
+    # -----------------------------------------------------------------------------
+    # Save submissions
+    # -----------------------------------------------------------------------------
+    print("\n" + "=" * 80)
+    print("CRÉATION DES SUBMISSIONS")
+    print("=" * 80)
+
+    # Vérifier que test a un champ Id
+    if "Id" not in test.columns:
+        print("⚠️  Colonne 'Id' non trouvée dans le test set.")
+        # Créer un Id si absent
+        test["Id"] = range(len(test))
+        print("   → Id créé automatiquement (0 à {})".format(len(test)-1))
+
+    sub_cat = pd.DataFrame({
+        "Id": test["Id"].astype(int),
+        "TauxGrippe": pred_test_cat
+    }).sort_values("Id").reset_index(drop=True)
+
+    sub_xgb = pd.DataFrame({
+        "Id": test["Id"].astype(int),
+        "TauxGrippe": pred_test_xgb
+    }).sort_values("Id").reset_index(drop=True)
+
+    sub_lgb = pd.DataFrame({
+        "Id": test["Id"].astype(int),
+        "TauxGrippe": pred_test_lgb
+    }).sort_values("Id").reset_index(drop=True)
+
+    sub_weighted = pd.DataFrame({
+        "Id": test["Id"].astype(int),
+        "TauxGrippe": pred_test_weighted
+    }).sort_values("Id").reset_index(drop=True)
+
+    sub_stacking = pd.DataFrame({
+        "Id": test["Id"].astype(int),
+        "TauxGrippe": pred_test_stacking
+    }).sort_values("Id").reset_index(drop=True)
+
+    p_cat = OUT_DIR / "submission_cat_improved.csv"
+    p_xgb = OUT_DIR / "submission_xgb_improved.csv"
+    p_lgb = OUT_DIR / "submission_lgb_improved.csv"
+    p_weighted = OUT_DIR / "submission_weighted_improved.csv"
+    p_stacking = OUT_DIR / "submission_stacking_improved.csv"
+
+    sub_cat.to_csv(p_cat, index=False)
+    sub_xgb.to_csv(p_xgb, index=False)
+    sub_lgb.to_csv(p_lgb, index=False)
+    sub_weighted.to_csv(p_weighted, index=False)
+    sub_stacking.to_csv(p_stacking, index=False)
+
+    print("\n✅ Submissions sauvegardées:")
+    print(f"   {p_cat.name}")
+    print(f"   {p_xgb.name}")
+    print(f"   {p_lgb.name}")
+    print(f"   {p_weighted.name}")
+    print(f"   {p_stacking.name}")
+
+    print(f"\n💡 À soumettre en priorité: {best_model[0].lower()}")
+    print(f"   (Meilleur score validation: RMSE={best_model[1]:.2f})")
+
+    print("\n⚠️  NOTE IMPORTANTE:")
+    print("   Les vrais lags temporels ne sont pas utilisés pour le test (is_train=False)")
+    print("   Pour améliorer: implémenter prédiction auto-régressive (itérative)")
+    print("   Cela pourrait encore réduire le RMSE de 5-15%")
+
+    print("\n✅ Tout terminé! Prêt pour Kaggle 🚀")
